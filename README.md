@@ -7,7 +7,7 @@ The scientific data management plan is described in the Word document `Prim_SDMP
 
 To reproduce data analysis, run `data-analysis-code/data_analysis_simulated.R`. All files needed for this script are provided. Code for compile the results and making some plots are included in the same script. Plots from this setup are provided in the folder `data-analysis-code/simulated_plots` for verification. 
 
-Alternative, use `reproducibility_materials/data_analysis/data_analysis.Rmd` to check reproducibility.
+Alternatively, use `reproducibility_materials/data_analysis/data_analysis.Rmd` to check reproducibility.
 
 ## Organization
 
