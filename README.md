@@ -28,7 +28,7 @@ The original health outcome data from Medicare, `health_data.csv` is not availab
 
 #### With access to Medicare data 
 
-After the R objects are created from `data_preparation.R`, `final_analyses.R` can be used to run the data analysis. Necessary functions are in `functions_analysis.R`. Then `final_results_plots.R` can be used to make figures. Some additional R scripts---`cross_validation.R`, `model_selection.R`, `tensor_summary.R`---are also provided. 
+After the R objects are created from `data_preparation.R`, `final_analyses.R` can be used to run the data analysis. Necessary functions are in `functions_analysis.R`. Then `final_results_plots.R` and `final_results_plots_with_USM.R` can be used to make figures. Some additional R scripts---`cross_validation.R`, `model_selection.R`, `tensor_summary.R`, `sensitivity_check.R`---are also provided. 
 
 
 #### Without access to Medicare data 
