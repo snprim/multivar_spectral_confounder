@@ -50,6 +50,7 @@ MCMC_model4_8_XZ_cv <- function(Y, X, Z, Qmat, E, n, R, Q, L, K, B, iters = 1000
   # running mean and var for predicted Y test set
   Moment1 <- Moment2 <- 0
   
+  pb <- txtProgressBar(min = 2, max = iters, style = 3)
   for (iter in 2:iters){
     # update tensor margins for beta
     AU <- Umat%*%t(Amat)
@@ -198,8 +199,17 @@ MCMC_model4_8_XZ_cv <- function(Y, X, Z, Qmat, E, n, R, Q, L, K, B, iters = 1000
     keepers_AU[,,iter] <- AU
     keepers_varz[iter,] <- c(tau2, lambda)
     
+    
+    # Sleep for 0.1 seconds
+    Sys.sleep(0.01)
+    
+    # Print progress
+    setTxtProgressBar(pb, iter)
+    
   }
 
+  close(pb)
+  
   tok <- proc.time()
   if (full_result){
     out <- list(beta = keepers_beta[,,,(burn+1):iters], alpha = keepers_alpha[,,(burn+1):iters], varz = keepers_varz, AU = keepers_AU, acc_rate = acc/att, time = tok - tik, MH = MH, y_mean = Moment1, y_var  = Moment2-Moment1^2)  
@@ -267,9 +277,10 @@ MCMC_model4_8_3_XZ_cv <- function(Y, X, Z, Qmat, E, n, R, Q, L, K, B, iters = 10
   }
   # running mean and var for predicted Y test set
   Moment1 <- Moment2 <- 0
+  pb <- txtProgressBar(min = 2, max = iters, style = 3)
   
   for (iter in 2:iters){
-    print(paste0("This is the ", iter, "th iterations."))
+    # print(paste0("This is the ", iter, "th iterations."))
     # update tensor margins for beta
     for (k in 1:K){
       for (l in 1:L){
@@ -422,10 +433,212 @@ MCMC_model4_8_3_XZ_cv <- function(Y, X, Z, Qmat, E, n, R, Q, L, K, B, iters = 10
         keepers_Tr[,,(iter-burn)%/%thin] <- Tr
       }
     }
+    
+    # Sleep for 0.1 seconds
+    Sys.sleep(0.01)
+    
+    # Print progress
+    setTxtProgressBar(pb, iter)
+    
   }
+  
+  close(pb)
   
   tok <- proc.time()
   out <- list(Tl = keepers_Tl, Te = keepers_Te, Tr = keepers_Tr, acc_rate = acc/att, time = tok - tik, MH = MH, y_mean = Moment1, y_var  = Moment2-Moment1^2)  
   return(out)
 }
 
+
+# p = total number of alphas and betas
+# n = number of sites
+# r = number of response variables 
+# q = number of factors 
+# constant beta across frequency
+# added covariates Z
+# added cross validation
+MCMC_model3_2_XZ_cv <- function(Y, X, Z, Qmat, p = 5, n, R, Q, iters = 1000, burn = 50, num1, num2, W, thin = 2){
+  if (num1 != 1 | num2 != n){
+    Y <- Y[num1:num2,]
+    X <- X[num1:num2,]
+    Z <- Z[num1:num2,]
+    n <- num2-num1+1
+  }
+  tik <- proc.time()
+  # Aindex keeps track of the number of entries in each row of A to be updated
+  Aindex <- rep(0, R)
+  for (r in 1:R){
+    if (r <= Q) Aindex[r] <- r-1
+    else Aindex[r] <- Q
+  }
+  iters_thin <- (iters-burn)%/%thin
+  keepers_beta <- array(0, c(p, R, iters_thin))
+  # the draws group by r (beta, A, tau2) and by q (U and sig2)
+  # draws are stored in 3d arrays of the dimension rows by cols by iters
+  p2 <- ncol(Z)
+  # keepers_alpha <- array(0, c(p2, R, iters))
+  Amat <- matrix(0, nrow = R, ncol = Q)
+  for (r in 1:R){
+    if (r <= Q) Amat[r,r] <- 1    
+  }
+  att <- acc <- 0
+  # priors and initial values
+  MH <- 0.1
+  # W <- eigen(Qmat)$values[num1:num2]
+  cov_B_inv <- diag(1/100, p)
+  a_sig2 <- b_sig2 <- .1
+  a_tau <- .5
+  b_tau <- .005
+  # logpdf1 <- 0
+  # logpdf2 <- 0
+  Umat <- matrix(0, nrow = n, ncol = Q)
+  betaz <- keepers_beta[,,1]
+  alpha <- matrix(0, nrow = p2, ncol = R)
+  # alpha <- keepers_alpha[,,1]
+  sig2 <- rep(0.5, Q)
+  tau2 <- rep(0.5, R)
+  lambda <- 0.5
+  
+  # fill in values for test set 
+  miss    <- which(is.na(Y[,1]))
+  nm      <- length(miss)
+  for (r in 1:ncol(Y)){
+    Y[miss,r] <- rnorm(nm) 
+  }
+  # running mean and var for predicted Y test set
+  Moment1 <- Moment2 <- 0
+  pb <- txtProgressBar(min = 2, max = iters, style = 3)
+  
+  for (iter in 2:iters){
+    # print(paste0("This is the ", iter, "th iterations."))
+    Zalpha <- Z%*%alpha
+    for (i in 1:R){
+      # update beta_r
+      KtX <- sweep(t(X), 2, 1/tau2[i], "*")
+      A <- KtX %*% X + cov_B_inv
+      # solA <- solve(A)
+      B <- KtX%*%(Y[,i]-Umat%*%Amat[i,]-Zalpha[,i])
+      # betaz[,i] <- mvrnorm(1, solA%*%B, solA)
+      betaz[,i] <- spam::rmvnorm.canonical(1, B, A)
+      # update tau2_r
+      tau2[i] <- rinvgamma(1, n/2 + a_tau, 0.5*sum((Y[,i]-X%*%betaz[,i]-Umat%*%Amat[i,]-Zalpha[,i])^2) + b_tau)
+      # update A_r
+      z <- Aindex[i]
+      if (z == 0) {
+        next
+      }
+      # tUK <- sweep(t(Umat[,1:z]), 2, 1/tau2[i], "*")
+      # AA <- tUK %*% Umat[,1:z] + diag(1/.25, z)
+      tUK <- sweep(t(Umat[,]), 2, 1/tau2[i], "*")
+      AA <- tUK %*% Umat[,] + diag(1/.25, Q)
+      # solAA <- solve(AA)
+      BB <- tUK %*% (Y[,i]-X%*%betaz[,i]-Zalpha[,i])
+      # Amat[i,1:z] <- mvrnorm(1, solAA%*%BB, solAA)[1:z]
+      Amat[i,1:z] <- spam::rmvnorm.canonical(1, BB, AA)[1:z]
+    }
+    for (i in 1:R){
+      # update alpha_r
+      tZK <- sweep(t(Z), 2, 1/tau2[i], "*")
+      AAZ <- tZK %*% Z + diag(1/100, p2)
+      BBZ <- tZK %*% (Y[,i] - Umat%*%Amat[i,] - X%*%betaz[,i])
+      alpha[,i] <- spam::rmvnorm.canonical(1, BBZ, AAZ)
+    }
+    for (j in 1:Q){
+      # update sig2Q
+      Kinv_q <- makeKinv(Umat[,j], lambda, W)
+      sig2[j] <- rinvgamma(1, n/2+a_sig2, Kinv_q/2+b_sig2)
+      # update Uq
+      Qindex <- setdiff(1:Q, j)
+      sumR <- rep(0, n)
+      sumArqdivTaur <- 0
+      for (w in 1:R){
+        sumP <- rep(0, n)
+        for (qprime in Qindex){
+          sumP <- sumP + Umat[,qprime] * Amat[w,qprime]
+        }
+        sumArqdivTaur <- sumArqdivTaur + ((Amat[w,j])^2/tau2[w])
+        sumR <- sumR + ((Y[,w]-X%*%betaz[,w]-Zalpha[,w]-sumP)*Amat[w,j]/tau2[w])
+      }
+      vark <- sumArqdivTaur+(1-lambda+lambda*W)/sig2[j]
+      for (k in 1:n){
+        Umat[k,j] <- rnorm(1, sumR[k]/vark[k], 1/sqrt(vark[k]))
+      }
+    }
+    # update lambdaU
+    att <- att + 1
+    can <- pnorm(rnorm(1,qnorm(lambda), MH))
+    # calculate current and candidate loglikelihood
+    curlp <- 0
+    canlp <- 0
+    for (m in 1:Q){
+      curK <- makeK(sig2[m], lambda, W)
+      canK <- makeK(sig2[m], can, W)
+      curKinv <- makeKinv(Umat[,m], lambda, W)
+      canKinv <- makeKinv(Umat[,m], can, W)
+      curlp <- curlp + log_like(curK, curKinv, sig2[m])
+      canlp <- canlp + log_like(canK, canKinv, sig2[m])
+    }
+    Rval <- canlp - curlp + dnorm(qnorm(can), log = TRUE) - dnorm(qnorm(lambda), log = TRUE)
+    if (!is.na(Rval) & log(runif(1)) < Rval & lambda < .9999){
+      acc <- acc + 1
+      lambda <- can
+    }
+    if(iter < burn){
+      if(att > 50){
+        if(acc/att < 0.3){MH <- MH*0.8}
+        if(acc/att > 0.5){MH <- MH*1.2}
+        acc <- att <- 0
+      }
+    }
+    
+    if (iter > burn){
+      if ((iter-burn)%%thin == 0){
+        keepers_beta[,,(iter-burn)%/%thin] <- betaz  
+      }
+    }
+    
+    # calculate posterior of the likelihood 
+    yhat <- X %*% betaz + Umat%*%t(Amat) + Z%*%alpha
+    
+    # curll <- matrix(0, nrow = n, ncol = R)
+    # for (i in 1:R){
+    #   curll[,i] <- -.5*log(tau2[i]) - .5*((Y[,i]-yhat[,i])^2/tau2[i])
+    # }
+    # 
+    # if(iter > burn){
+    #   logpdf1 <- logpdf1 + (curll)/(iters-burn)
+    #   logpdf2 <- logpdf2 + (curll^2)/(iters-burn)
+    # }
+    
+    # missing values
+    if(nm>0){
+      for (r in 1:R){
+        Y[miss,r] <- rnorm(nm, yhat[miss,r], sqrt(tau2[r])) 
+      }
+    }
+    
+    if(iter>burn){
+      Moment1 <- Moment1 + Y/(iters-burn)
+      Moment2 <- Moment2 + Y*Y/(iters-burn)
+    }
+    
+    
+    # Sleep for 0.1 seconds
+    Sys.sleep(0.01)
+    
+    # Print progress
+    setTxtProgressBar(pb, iter)
+    
+  }
+  # WAIC computations
+  # mn_logpdf  <- logpdf1
+  # var_logpdf <- logpdf2 - logpdf1^2
+  # pW         <- sum(var_logpdf)
+  # WAIC       <- list(WAIC=-2*sum(mn_logpdf)+2*pW,pW=pW)
+  
+  close(pb)
+  
+  tok <- proc.time()
+  out <- list(beta = keepers_beta, acc_rate = acc/att, time = tok - tik, MH = MH, y_mean = Moment1, y_var  = Moment2-Moment1^2)
+  return(out)
+}

@@ -2,19 +2,20 @@ library(tidyverse)
 library(rTensor)
 
 # these scripts contain necessary functions 
-source("functions_analysis.R")
-source("cross_validation.R")
+source("data-analysis-code/functions_analysis.R")
+# source("cross_validation.R")
 
 
 # visualize tensor
 
-fit_svi_K10_L10_stB <- readRDS("fit_svi_K10_L10_stB.rds")
+fit_svi_K10_L10 <- readRDS("results/fit_svi_K10_L10.rds")
 E <- 4
 R <- 5
-Test <- fit_svi_K10_L10_stB
+Test <- fit_svi_K10_L10
+L <- 10
 
 # calculate gamma from Tl, Te, Tr
-n <- nrow(Y_star)
+n <- 10149
 Test_gamma <- array(0, c(L,E,R,9000))
 for (i in 1:9000){
   Test_gamma[,,,i] <- find_tol_gamma(Test$Tl[,,i], Test$Te[,,i], Test$Tr[,,i]) 
@@ -23,6 +24,7 @@ for (i in 1:9000){
 mean_gamma <- rowMeans(Test_gamma, dims = 3)
 
 mean_gamma <- as.tensor(mean_gamma)
+
 set.seed(18)
 rank <- 2
 cp_decomp <- cp(mean_gamma, num_components = rank, max_iter = 5000, tol = 1e-12)
@@ -50,7 +52,7 @@ for (k in 1:rank){
   tensor_E[[k]] <- data.frame(K = k, 
                               component = "Exposures",
                               coef = cp_decomp$U[[2]][,k],
-                              name = c("Theme 1", "Theme 2", "Theme 3", "Theme 4"))
+                              name = c("1", "2", "3", "4"))
   
 }
 
@@ -78,7 +80,9 @@ ggplot(data = tensor_data, aes(x = factor(name, levels = all_levels), group = fa
   facet_wrap(~factor(component, levels = tensor_margin), scales = "free") + 
   labs(color = "Rank", x = "", y = "Tensor coefficient") + 
   theme(plot.title = element_text(size=10, face="bold.italic", hjust = 0.5),
-        axis.text.x = element_text(size=7)) + 
+        axis.text.x = element_text(size=8)) + 
   ylim(c(-0.3, 0.7)) +
   scale_color_manual(values = c("1" = "#35B779FF",
                                 "2" = "#440154FF"))
+
+ggsave(filename = "plots/tensor_estimates2.png", width=6, height=4, dpi=300)
